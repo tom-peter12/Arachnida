@@ -6,6 +6,10 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 
 def append_http(url):
 	if not url.startswith(('http://', 'https://')):
@@ -18,12 +22,16 @@ class Spider:
 		self.path = path
 		self.url = url
 
+		chrome_options = Options()
+		chrome_options.add_argument("--headless")
+		self.driver = webdriver.Chrome(service=Service('/Users/tpetros/homebrew/bin/chromedriver'), options=chrome_options)
+
 	def fetch_links(self, url):
 		try:
-			response = requests.get(url)
-			soup = BeautifulSoup(response.text, 'html.parser')
-			links = soup.find_all('a')
-			urls = [urljoin(url, link.get('href')) for link in links if link.get('href')]
+			self.driver.get(url)
+			time.sleep(2)
+			links = self.driver.find_elements(By.TAG_NAME, 'a')
+			urls = [urljoin(url, link.get_attribute('href')) for link in links if link.get_attribute('href')]
 			return urls
 		except Exception as e:
 			print(f"Error processing {url}: {e}")
@@ -31,10 +39,10 @@ class Spider:
 
 	def fetch_images(self, url):
 		try:
-			response = requests.get(url)
-			soup = BeautifulSoup(response.text, 'html.parser')
-			img_tags = soup.find_all('img')
-			img_urls = [urljoin(url, img['src']) for img in img_tags if img.get('src')]
+			self.driver.get(url)
+			time.sleep(2)
+			img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
+			img_urls = [urljoin(url, img.get_attribute('src')) for img in img_tags if img.get_attribute('src')]
 			return img_urls
 		except Exception as e:
 			print(f"Error fetching images from {url}: {e}")
@@ -56,7 +64,7 @@ class Spider:
 		}
 		os.makedirs(self.path, exist_ok=True)
 
-		with ThreadPoolExecutor(max_workers=10) as executor:
+		with ThreadPoolExecutor(max_workers=None) as executor:
 			for i in range(self.depth):
 				new_links = []
 				futures = {executor.submit(self.fetch_links, url): url for url in ALL_LINKS[i]}
@@ -80,6 +88,9 @@ class Spider:
 						executor.submit(self.download_image, img_url)
 				except Exception as e:
 					print(f"Error processing images: {e}")
+
+	def __del__(self):
+		self.driver.quit()
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
