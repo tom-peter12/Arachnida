@@ -1,105 +1,170 @@
 import re
-import time
 import argparse
 import requests
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
+import os, sys
+import logging
+from urllib.robotparser import RobotFileParser
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from rich_argparse import RichHelpFormatter
+import hashlib
+import time
+from collections import defaultdict
 
-def append_http(url):
-	if not url.startswith(('http://', 'https://')):
-		return 'http://' + url
-	return url
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'bmp'}
+
+class SpiderException(Exception):
+	pass
 
 class Spider:
-	def __init__(self, depth, url, path):
-		self.depth = depth
+	def __init__(self, recr, depth, url, path):
+		self.depth = depth if recr else 0
 		self.path = path
-		self.url = url
+		self.ALL_LINKS = defaultdict(set)
+		self.ALL_LINKS[0].add(url)
+		self.img_links = set()
+		self.recr = recr
+		self.visited_urls = set()
+		self.rp = RobotFileParser()
+		self.session = requests.Session()
+		self.session.headers.update({'User-Agent': 'YourBot/1.0'})
 
-		chrome_options = Options()
-		chrome_options.add_argument("--headless")
-		self.driver = webdriver.Chrome(service=Service('/Users/tpetros/homebrew/bin/chromedriver'), options=chrome_options)
+		try:
+			chrome_options = Options()
+			chrome_options.add_argument("--headless")
+			self.driver = webdriver.Chrome(service=Service('/Users/tpetros/homebrew/bin/chromedriver'), options=chrome_options)
+			self.create_folder()
+		except Exception as e:
+			raise SpiderException(f'{e}')
 
-	def fetch_links(self, url):
+	def create_folder(self):
+		try:
+			os.makedirs(self.path, exist_ok=True)
+		except Exception as e:
+			raise SpiderException(f'{e}')
+
+	def fetch_links_and_image_links(self, url):
+		if url in self.visited_urls:
+			return set()
+
+		self.visited_urls.add(url)
 		try:
 			self.driver.get(url)
-			time.sleep(2)
+			self.driver.implicitly_wait(2)
+
+			# Fetch links
 			links = self.driver.find_elements(By.TAG_NAME, 'a')
-			urls = [urljoin(url, link.get_attribute('href')) for link in links if link.get_attribute('href')]
+			urls = {urljoin(url, link.get_attribute('href')) for link in links if link.get_attribute('href')}
+
+			# Fetch image links
+			img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
+			img_urls = {
+				urljoin(url, img.get_attribute('src'))
+				for img in img_tags
+				if img.get_attribute('src') and os.path.splitext(img.get_attribute('src'))[1][1:].lower() in ALLOWED_IMAGE_EXTENSIONS
+			}
+			self.img_links.update(img_urls)
 			return urls
 		except Exception as e:
-			print(f"Error processing {url}: {e}")
-			return []
-
-	def fetch_images(self, url):
-		try:
-			self.driver.get(url)
-			time.sleep(2)
-			img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
-			img_urls = [urljoin(url, img.get_attribute('src')) for img in img_tags if img.get_attribute('src')]
-			return img_urls
-		except Exception as e:
-			print(f"Error fetching images from {url}: {e}")
-			return []
+			logging.error(f"Error fetching links from {url}: {e}")
+			return set()
 
 	def download_image(self, img_url):
 		try:
-			img_data = requests.get(img_url).content
-			img_name = os.path.join(self.path, os.path.basename(urlparse(img_url).path))
-			with open(img_name, 'wb') as img_file:
-				img_file.write(img_data)
-			print(f'Downloaded {img_url}')
+			parsed_url = urlparse(img_url)
+			self.rp.set_url(f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt")
+			self.rp.read()
+			if not self.rp.can_fetch("*", img_url):
+				logging.warning(f"Robots.txt disallows fetching {img_url}")
+				return
+
+			response = self.session.get(img_url, timeout=10, allow_redirects=True)
+			response.raise_for_status()
+
+			if 'image' not in response.headers.get('Content-Type', ''):
+				logging.warning(f"Content-Type is not an image for {img_url}")
+				return
+
+			img_name = hashlib.md5(img_url.encode()).hexdigest() + os.path.splitext(parsed_url.path)[1]
+			img_path = os.path.join(self.path, img_name)
+
+			with open(img_path, 'wb') as img_file:
+				img_file.write(response.content)
+				logging.info(f'Downloaded {img_url}')
+		except requests.exceptions.RequestException as e:
+			logging.warning(f"Failed to fetch {img_url}: {e}")
 		except Exception as e:
-			print(f'Failed to download {img_url}: {e}')
+			logging.error(f'Failed to download {img_url}: {e}')
 
 	def download(self):
-		ALL_LINKS = {
-			0: [self.url],
-		}
-		os.makedirs(self.path, exist_ok=True)
-
-		with ThreadPoolExecutor(max_workers=None) as executor:
-			for i in range(self.depth):
-				new_links = []
-				futures = {executor.submit(self.fetch_links, url): url for url in ALL_LINKS[i]}
+		i = 0
+		with ThreadPoolExecutor(max_workers=10) as executor:
+			while i <= self.depth:
+				new_links = set()
+				futures = {executor.submit(self.fetch_links_and_image_links, url): url for url in self.ALL_LINKS[i]}
 				for future in as_completed(futures):
 					try:
 						result = future.result()
-						new_links.extend(result)
+						new_links.update(result)
+						if not self.recr:
+							break
 					except Exception as e:
-						print(f"Error fetching links: {e}")
-				ALL_LINKS[i + 1] = new_links
+						logging.error(f"Error fetching links: {e}")
+				self.ALL_LINKS[i + 1] = new_links - self.visited_urls
+				i += 1
 
-			image_futures = []
-			for level in range(self.depth + 1):
-				for url in ALL_LINKS.get(level, []):
-					image_futures.append(executor.submit(self.fetch_images, url))
-
+			image_futures = [executor.submit(self.download_image, url) for url in self.img_links]
 			for future in as_completed(image_futures):
 				try:
-					img_urls = future.result()
-					for img_url in img_urls:
-						executor.submit(self.download_image, img_url)
+					future.result()
 				except Exception as e:
-					print(f"Error processing images: {e}")
+					logging.error(f"Error downloading images: {e}")
 
-	def __del__(self):
-		self.driver.quit()
+		logging.info(f"Total image links found: {len(self.img_links)}")
+		logging.info(f"Total images downloaded: {len([f for f in os.listdir(self.path) if os.path.isfile(os.path.join(self.path, f))])}")
+
+class ArgParser:
+	def __init__(self):
+		self.parser = argparse.ArgumentParser(
+			description="A tool to download images from a URL with optional recursive depth.",
+			formatter_class=RichHelpFormatter
+		)
+		self.parser.add_argument(
+			'-r', '--recursive',
+			action='store_true',
+			help="Recursively downloads the images in the specified URL."
+		)
+		self.parser.add_argument(
+			'-l', '--level',
+			type=int,
+			default=5,
+			help="Maximum depth level for recursive download. Default is 5."
+		)
+		self.parser.add_argument(
+			'-p', '--path',
+			type=str,
+			default='./data/',
+			help="Path to save the downloaded files. Default is './data/'."
+		)
+		self.parser.add_argument(
+			'URL',
+			type=str,
+			help="The URL to start downloading from."
+		)
+
+	def parse_args(self):
+		return self.parser.parse_args()
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser.add_argument('-r', '--recursive', action='store_true', help="recursively downloads the images in a URL received as a parameter")
-	parser.add_argument('-l', '--level', type=int, default=5, help="indicates the maximum depth level of the recursive download. If not indicated, it will be 5")
-	parser.add_argument('-p', '--path', type=str, default='./data/', help="indicates the path where the downloaded files will be saved. If not specified, ./data/ will be used")
-	parser.add_argument('url', help="the URL to start downloading from")
-
-	args = parser.parse_args()
-
-	s = Spider(args.level, args.url, args.path)
-	s.download()
+	args = ArgParser().parse_args()
+	try:
+		s = Spider(args.recursive, args.level, args.URL, args.path)
+		s.download()
+	except Exception as e:
+		logging.error(f"Error occurred: {e}")
