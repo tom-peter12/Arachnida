@@ -1,9 +1,8 @@
-import re
 import argparse
 import requests
 from urllib.parse import urljoin, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os, sys
+import os
 import logging
 from urllib.robotparser import RobotFileParser
 from selenium import webdriver
@@ -12,7 +11,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from rich_argparse import RichHelpFormatter
 import hashlib
-import time
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -161,10 +159,14 @@ class ArgParser:
 	def parse_args(self):
 		return self.parser.parse_args()
 
-if __name__ == '__main__':
+def main():
 	args = ArgParser().parse_args()
 	try:
 		s = Spider(args.recursive, args.level, args.URL, args.path)
 		s.download()
 	except Exception as e:
 		logging.error(f"Error occurred: {e}")
+
+
+if __name__ == '__main__':
+	main()
