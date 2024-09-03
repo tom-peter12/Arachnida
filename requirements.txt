@@ -1,5 +1,6 @@
 rich-argparse
 requests
-selenium
 pillow
 colorama
+beautifulsoup4
+Django==5.1

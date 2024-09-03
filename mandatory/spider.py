@@ -5,10 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import logging
 from urllib.robotparser import RobotFileParser
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
+from bs4 import BeautifulSoup
 from rich_argparse import RichHelpFormatter
 import hashlib
 from collections import defaultdict
@@ -16,6 +13,15 @@ from collections import defaultdict
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'bmp'}
+
+SIGNATURE = f'''
+	███████╗██████╗ ██╗██████╗ ███████╗██████╗ 
+	██╔════╝██╔══██╗██║██╔══██╗██╔════╝██╔══██╗
+	███████╗██████╔╝██║██║  ██║█████╗  ██████╔╝
+	╚════██║██╔═══╝ ██║██║  ██║██╔══╝  ██╔══██╗
+	███████║██║     ██║██████╔╝███████╗██║  ██║
+	╚══════╝╚═╝     ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+'''
 
 class SpiderException(Exception):
 	pass
@@ -31,21 +37,19 @@ class Spider:
 		self.visited_urls = set()
 		self.rp = RobotFileParser()
 		self.session = requests.Session()
-		self.session.headers.update({'User-Agent': 'YourBot/1.0'})
+		self.session.headers.update({'User-Agent': 'spider/1.0'})
 
-		try:
-			chrome_options = Options()
-			chrome_options.add_argument("--headless")
-			self.driver = webdriver.Chrome(service=Service('/Users/tpetros/homebrew/bin/chromedriver'), options=chrome_options)
-			self.create_folder()
-		except Exception as e:
-			raise SpiderException(f'{e}')
+		self.create_folder()
 
 	def create_folder(self):
 		try:
-			os.makedirs(self.path, exist_ok=True)
+			os.makedirs(self.path)
 		except Exception as e:
-			raise SpiderException(f'{e}')
+			raise SpiderException(f'Failed to create folder!')
+
+	@staticmethod
+	def does_robotstxt_exist(url):
+		return requests.head(url).status_code < 400
 
 	def fetch_links_and_image_links(self, url):
 		if url in self.visited_urls:
@@ -53,34 +57,33 @@ class Spider:
 
 		self.visited_urls.add(url)
 		try:
-			self.driver.get(url)
-			self.driver.implicitly_wait(2)
+			response = self.session.get(url)
+			response.raise_for_status()
 
-			# Fetch links
-			links = self.driver.find_elements(By.TAG_NAME, 'a')
-			urls = {urljoin(url, link.get_attribute('href')) for link in links if link.get_attribute('href')}
+			soup = BeautifulSoup(response.content, 'html.parser')
 
-			# Fetch image links
-			img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
+			links = {urljoin(url, a['href']).lower() for a in soup.find_all('a', href=True)}
 			img_urls = {
-				urljoin(url, img.get_attribute('src'))
-				for img in img_tags
-				if img.get_attribute('src') and os.path.splitext(img.get_attribute('src'))[1][1:].lower() in ALLOWED_IMAGE_EXTENSIONS
+				urljoin(url, img['src']).lower()
+				for img in soup.find_all('img', src=True)
+				if os.path.splitext(img['src'])[1][1:].lower() in ALLOWED_IMAGE_EXTENSIONS
 			}
 			self.img_links.update(img_urls)
-			return urls
-		except Exception as e:
+			return links
+		except requests.exceptions.RequestException as e:
 			logging.error(f"Error fetching links from {url}: {e}")
 			return set()
 
 	def download_image(self, img_url):
 		try:
 			parsed_url = urlparse(img_url)
-			self.rp.set_url(f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt")
-			self.rp.read()
-			if not self.rp.can_fetch("*", img_url):
-				logging.warning(f"Robots.txt disallows fetching {img_url}")
-				return
+			robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
+			self.rp.set_url(robots_url)
+			if Spider.does_robotstxt_exist(robots_url):
+				self.rp.read()
+				if not self.rp.can_fetch("*", img_url):
+					logging.warning(f"Robots.txt disallows fetching {img_url}")
+					return
 
 			response = self.session.get(img_url, timeout=10, allow_redirects=True)
 			response.raise_for_status()
@@ -117,6 +120,7 @@ class Spider:
 				self.ALL_LINKS[i + 1] = new_links - self.visited_urls
 				i += 1
 
+
 			image_futures = [executor.submit(self.download_image, url) for url in self.img_links]
 			for future in as_completed(image_futures):
 				try:
@@ -128,6 +132,12 @@ class Spider:
 		logging.info(f"Total images downloaded: {len([f for f in os.listdir(self.path) if os.path.isfile(os.path.join(self.path, f))])}")
 
 class ArgParser:
+	def check_positive(self, value):
+		ivalue = int(value)
+		if ivalue < 0:
+			raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
+		return ivalue
+
 	def __init__(self):
 		self.parser = argparse.ArgumentParser(
 			description="A tool to download images from a URL with optional recursive depth.",
@@ -140,7 +150,7 @@ class ArgParser:
 		)
 		self.parser.add_argument(
 			'-l', '--level',
-			type=int,
+			type=self.check_positive,
 			default=5,
 			help="Maximum depth level for recursive download. Default is 5."
 		)
@@ -166,7 +176,6 @@ def main():
 		s.download()
 	except Exception as e:
 		logging.error(f"Error occurred: {e}")
-
 
 if __name__ == '__main__':
 	main()

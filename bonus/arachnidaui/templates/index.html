@@ -1,0 +1,38 @@
+
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+	<div>
+		<p class="text-5xl m-8">A web scraping tool that extracts all images from a website, recursively, using a provided URL</p>
+	</div>
+
+	<div class="divider"></div>
+
+
+	<form method="POST" action="{% url 'spider' %}">
+		{% csrf_token %}
+		<div class="flex items-center gap-4">
+			<label class="form-control grow">
+				<input type="text" name="url" placeholder="Put a URL here" class="input input-bordered w-full" />
+			</label>
+
+			<label class="flex items-center w-1/4">
+				<input type="number" name="levels" placeholder="Levels" class="input input-bordered w-full" />
+			</label>
+
+			<div class="form-control w-1/4">
+				<label class="label cursor-pointer">
+					<span class="label-text">Recursively?</span>
+					<input type="checkbox" name="recursive" class="checkbox" />
+				</label>
+			</div>
+		</div>
+		<button class="btn btn-block my-8">Start Scraping</button>
+	</form>
+
+
+
+	<div class="divider"></div>
+{% endblock content %}
+

@@ -1,0 +1,101 @@
+
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+{% if image_links %}
+
+	<div>
+		<button class="btn btn-wide">Wide</button>
+	</div>
+	<div class="divider mx-8"></div>
+
+	<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+		{% for image in image_links %}
+			<div class="card w-96 bg-base-100 shadow-xl">
+				<button class="absolute top-2 right-2 bg-gray-800 text-white p-2 rounded-full">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M11 4H5.5A2.5 2.5 0 003 6.5v11A2.5 2.5 0 005.5 20H18.5A2.5 2.5 0 0021 17.5V12m-9 8v-4m-1 4h2M15 3l6 6m-3-2L12 15m-1-1l6-6" />
+					</svg>
+				</button>
+
+				<figure>
+					<img src="{{ image }}" alt="Downloaded Image" class="w-full h-64 object-cover rounded-t-lg">
+				</figure>
+				<div class="card-body text-center">
+					<p>{{ image }}</p>
+					
+				</div>
+			</div>
+		{% endfor %}
+	</div>
+{% else %}
+	<p>No images to display.</p>
+{% endif %}
+
+{% endblock content %}
+
+
+{% comment %} 
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+
+<div id="loading-container">
+  <!-- Skeleton Loader -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div class="flex w-52 flex-col gap-4">
+      <div class="skeleton h-32 w-full"></div>
+      <div class="skeleton h-4 w-28"></div>
+      <div class="skeleton h-4 w-full"></div>
+      <div class="skeleton h-4 w-full"></div>
+    </div>
+    <!-- Repeat skeleton loader for other items -->
+  </div>
+</div>
+
+<div id="content-container" style="display: none;">
+  {% if image_links %}
+    <div>
+      <button class="btn btn-wide">Wide</button>
+    </div>
+    <div class="divider mx-8"></div>
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {% for image in image_links %}
+        <div class="card w-96 bg-base-100 shadow-xl">
+          <button class="absolute top-2 right-2 bg-gray-800 text-white p-2 rounded-full">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 4H5.5A2.5 2.5 0 003 6.5v11A2.5 2.5 0 005.5 20H18.5A2.5 2.5 0 0021 17.5V12m-9 8v-4m-1 4h2M15 3l6 6m-3-2L12 15m-1-1l6-6" />
+            </svg>
+          </button>
+
+          <figure>
+            <img src="{{ image }}" alt="Downloaded Image" class="w-full h-64 object-cover rounded-t-lg">
+          </figure>
+          <div class="card-body text-center">
+            <p>{{ image }}</p>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>No images to display.</p>
+  {% endif %}
+</div>
+
+<script>
+	document.addEventListener("DOMContentLoaded", function() {
+	  // Simulate an async data loading process
+	  setTimeout(function() {
+		// Hide the skeleton loader
+		document.getElementById('loading-container').style.display = 'none';
+		// Show the actual content
+		document.getElementById('content-container').style.display = 'block';
+	  }, 2000); // Adjust this time to simulate loading time
+	});
+  </script>
+  
+
+{% endblock content %} {% endcomment %}
