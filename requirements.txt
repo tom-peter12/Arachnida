@@ -4,3 +4,5 @@ pillow
 colorama
 beautifulsoup4
 Django==5.1
+aiohttp
+lxml
