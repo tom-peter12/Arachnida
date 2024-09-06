@@ -1,10 +1,11 @@
 from urllib.parse import urljoin, urlparse, urlunparse
-import os, logging, hashlib, argparse, asyncio, aiohttp, datetime
+import os, logging, hashlib, argparse, asyncio, aiohttp, datetime, json
 from urllib.robotparser import RobotFileParser
 from lxml import html
 from rich_argparse import RichHelpFormatter
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
+from aiohttp import ClientResponseError
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -57,9 +58,17 @@ class Spider:
 	@staticmethod
 	async def does_robotstxt_exist(session, url):
 		try:
-			async with session.head(url) as response:
-				return response.status < 400
-		except:
+			async with session.get(url) as response:
+				if response.status < 400:
+					return True
+				elif response.headers.get('Content-Type', '').startswith('application/json'):
+					json_response = await response.json()
+					if isinstance(json_response, dict) and 'messages' in json_response:
+						for message in json_response['messages']:
+							if message.get('type') == 'error' and message.get('message') == 'Not Found':
+								return False
+				return False
+		except (ClientResponseError, json.JSONDecodeError, KeyError, AttributeError):
 			return False
 
 	async def fetch_with_redirect_loop_detection(self, session, url):
