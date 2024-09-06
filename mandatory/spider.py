@@ -232,8 +232,9 @@ async def main():
 	try:
 		s = Spider(args.recursive, args.level, args.URL, args.path)
 		await s.download()
-	except Exception as e:
-		logging.error(f"Error occurred: {e}")
+	except SpiderException as e:
+		logging.error(f"Spider failed: {e}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+	print(SIGNATURE)
 	asyncio.run(main())
