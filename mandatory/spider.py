@@ -40,6 +40,13 @@ class Spider:
 
 	def create_folder(self):
 		try:
+			if os.path.exists(self.path):
+				if not os.path.isdir(self.path):
+					raise SpiderException(f"Path '{self.path}' is not a directory")
+				if os.listdir(self.path):
+					confirmation = input(f"Directory '{self.path}' is not empty. Do you want to continue? (yes/no): ").strip().lower()
+					if confirmation != 'yes':
+						raise SpiderException("Operation cancelled by user")
 			os.makedirs(self.path, exist_ok=True)
 		except Exception as e:
 			raise SpiderException(f'Failed to create folder: {e}')
@@ -130,12 +137,14 @@ class Spider:
 		except Exception as e:
 			logging.error(f'Failed to download {img_url}: {e}')
 
-	async def process_url(self, session, url):
+	async def process_url(self, session, url, depth):
 		new_links = await self.fetch_links(session, url)
-		for link in new_links:
-			if link not in self.visited_urls:
-				if self.recr and (len(self.ALL_LINKS) <= self.depth):
-					self.ALL_LINKS[len(self.ALL_LINKS)].add(link)
+		
+		next_depth = depth + 1
+		if self.recr and next_depth <= self.depth:
+			for link in new_links:
+				if link not in self.visited_urls:
+					self.ALL_LINKS[next_depth].add(link)
 
 	async def download(self):
 		timeout = aiohttp.ClientTimeout(total=60)
@@ -148,7 +157,7 @@ class Spider:
 				if depth > self.depth:
 					continue
 
-				await self.process_url(session, url)
+				await self.process_url(session, url, depth)
 
 				for img_url in self.img_links:
 					image_tasks.add(asyncio.create_task(self.download_image(session, img_url)))
@@ -158,11 +167,12 @@ class Spider:
 						if link not in self.visited_urls:
 							queue.append((depth + 1, link))
 
-			self.pool.map(lambda img_url: asyncio.run(self.download_image(session, img_url)), self.img_links)
 			await asyncio.gather(*image_tasks)
 
-		logging.info(f"Total image links found: {len(self.img_links)}")
-		logging.info(f"Total images downloaded: {len([f for f in os.listdir(self.path) if os.path.isfile(os.path.join(self.path, f))])}")
+		print("\n🎉 **Download Completed!**")
+		print(f"📂 **Downloaded Images are saved in '{self.path}'**")
+		print(self.ALL_LINKS)
+
 
 class ArgParser:
 	def check_positive(self, value):
@@ -172,6 +182,7 @@ class ArgParser:
 		return ivalue
 	
 	def validate_and_confirm(self, args):
+		print(SIGNATURE)
 		print("\n" + "="*50)
 		print("📋 **Please Confirm Your Settings Before Starting the Download**")
 		print("="*50)
@@ -236,5 +247,4 @@ async def main():
 		logging.error(f"Spider failed: {e}")
 
 if __name__ == "__main__":
-	print(SIGNATURE)
 	asyncio.run(main())
