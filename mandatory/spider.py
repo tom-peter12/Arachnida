@@ -1,11 +1,10 @@
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 import os, logging, hashlib, argparse, asyncio, aiohttp, datetime
 from urllib.robotparser import RobotFileParser
 from lxml import html
 from rich_argparse import RichHelpFormatter
-from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Pool
+from collections import deque
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -23,12 +22,17 @@ SIGNATURE = f'''
 class SpiderException(Exception):
 	pass
 
+class Node:
+	def __init__(self, url, depth):
+		self.url = url
+		self.depth = depth
+		self.children = []
+
 class Spider:
 	def __init__(self, recr, depth, url, path):
 		self.depth = depth if recr else 0
 		self.path = path
-		self.ALL_LINKS = defaultdict(set)
-		self.ALL_LINKS[0].add(url)
+		self.root = Node(url, 0)
 		self.img_links = []
 		self.recr = recr
 		self.visited_urls = set()
@@ -36,7 +40,6 @@ class Spider:
 
 		self.create_folder()
 		self.executor = ThreadPoolExecutor(max_workers=10)
-		self.pool = Pool(processes=10)
 
 	def create_folder(self):
 		try:
@@ -82,31 +85,40 @@ class Spider:
 
 		logging.error(f"Too many redirects for {url}")
 		return None
+	
+	def normalize_url(self, url):
+		parsed_url = urlparse(url)
+		parsed_url = parsed_url._replace(fragment='')
+		if parsed_url.path in ['/index.html', '/index']:
+			parsed_url = parsed_url._replace(path='/')
+		return urlunparse(parsed_url)
 
 	async def fetch_links(self, session, url):
-		if url in self.visited_urls:
+		normalized_url = self.normalize_url(url)
+		if normalized_url in self.visited_urls:
 			return set()
 
-		self.visited_urls.add(url)
+		self.visited_urls.add(normalized_url)
 		try:
-			content = await self.fetch_with_redirect_loop_detection(session, url)
+			content = await self.fetch_with_redirect_loop_detection(session, normalized_url)
 			if content is None:
 				return set()
 
 			tree = html.fromstring(content)
 
-			links = {urljoin(url, a).lower() for a in tree.xpath('//a/@href')}
+			links = {self.normalize_url(urljoin(normalized_url, a).lower()) for a in tree.xpath('//a/@href')}
 			img_urls = [
-				urljoin(url, img).lower()
+				urljoin(normalized_url, img).lower()
 				for img in tree.xpath('//img/@src')
 				if os.path.splitext(img)[1][1:].lower() in ALLOWED_IMAGE_EXTENSIONS
 			]
 			self.img_links.extend(img_urls)
-			logging.info(f"Found {len(img_urls)} images on {url}")
+			logging.info(f"Found {len(img_urls)} images on {normalized_url}")
 			return links
 		except Exception as e:
-			logging.error(f"Error fetching links from {url}: {e}")
+			logging.error(f"Error fetching links from {normalized_url}: {e}")
 			return set()
+
 
 	async def download_image(self, session, img_url):
 		try:
@@ -137,41 +149,52 @@ class Spider:
 		except Exception as e:
 			logging.error(f'Failed to download {img_url}: {e}')
 
-	async def process_url(self, session, url, depth):
-		new_links = await self.fetch_links(session, url)
-		
-		next_depth = depth + 1
-		if self.recr and next_depth <= self.depth:
-			for link in new_links:
-				if link not in self.visited_urls:
-					self.ALL_LINKS[next_depth].add(link)
+	async def process_url(self, session, parent_node):
+		new_links = await self.fetch_links(session, parent_node.url)
+		next_depth = parent_node.depth + 1
+
+		for link in new_links:
+			if link not in self.visited_urls and next_depth <= self.depth:
+				child_node = Node(link, next_depth)
+				parent_node.children.append(child_node)
 
 	async def download(self):
 		timeout = aiohttp.ClientTimeout(total=60)
 		async with aiohttp.ClientSession(headers={'User-Agent': 'spider/1.0'}, timeout=timeout) as session:
-			queue = deque([(0, url) for url in self.ALL_LINKS[0]])
+			queue = deque([self.root])
 			image_tasks = set()
 
 			while queue:
-				depth, url = queue.popleft()
-				if depth > self.depth:
-					continue
+				current_node = queue.popleft()
 
-				await self.process_url(session, url, depth)
+				await self.process_url(session, current_node)
 
-				for img_url in self.img_links:
-					image_tasks.add(asyncio.create_task(self.download_image(session, img_url)))
+				for img_url in set(self.img_links):
+					if img_url not in self.visited_urls:
+						image_tasks.add(asyncio.create_task(self.download_image(session, img_url)))
 
-				if depth < self.depth and self.recr:
-					for link in self.ALL_LINKS[depth + 1]:
-						if link not in self.visited_urls:
-							queue.append((depth + 1, link))
+				self.img_links.clear()
+
+				for child in current_node.children:
+					if child.url not in self.visited_urls:
+						queue.append(child)
 
 			await asyncio.gather(*image_tasks)
 
 		print("\n🎉 **Download Completed!**")
 		print(f"📂 **Downloaded Images are saved in '{self.path}'**")
-		print(self.ALL_LINKS)
+		self.print_tree()
+
+
+	def print_tree(self, filename="url_tree.txt"):
+		def print_node(node, file, prefix="", is_last=True):
+			file.write(f"{prefix}{'└── ' if is_last else '├── '}{node.url}\n")
+			for i, child in enumerate(node.children):
+				print_node(child, file, prefix + ('    ' if is_last else '│   '), i == len(node.children) - 1)
+
+		with open(filename, "w") as file:
+			file.write("🌳 **URL Tree Structure:**\n")
+			print_node(self.root, file)
 
 
 class ArgParser:
@@ -180,19 +203,19 @@ class ArgParser:
 		if ivalue <= 0:
 			raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
 		return ivalue
-	
+
 	def validate_and_confirm(self, args):
 		print(SIGNATURE)
-		print("\n" + "="*50)
+		print("\n" + "=" * 64)
 		print("📋 **Please Confirm Your Settings Before Starting the Download**")
-		print("="*50)
-		
+		print("=" * 64)
+
 		print(f"🔄 **Recursive**: {'Yes' if args.recursive else 'No'}")
 		print(f"📊 **Level**: {args.level} (default)" if args.level == 5 else f"📊 **Level**: {args.level}")
 		print(f"📂 **Path**: {args.path} (default)" if args.path == './data/' else f"📂 **Path**: {args.path}")
 		print(f"🌐 **URL**: {args.URL}")
-		
-		print("="*50)
+
+		print("=" * 64)
 		while True:
 			confirmation = input("✅ Is the above information correct? (yes/no): ").strip().lower()
 			if confirmation == 'yes':
@@ -217,18 +240,18 @@ class ArgParser:
 			'-l', '--level',
 			type=self.check_positive,
 			default=5,
-			help="Maximum depth level for recursive download. Default is 5."
+			help="Depth of recursion when using the recursive flag."
 		)
 		self.parser.add_argument(
 			'-p', '--path',
 			type=str,
 			default='./data/',
-			help="Path to save the downloaded files. Default is './data/'."
+			help="The path to save the downloaded images."
 		)
 		self.parser.add_argument(
 			'URL',
 			type=str,
-			help="The URL to start downloading from."
+			help="The URL from which to start downloading."
 		)
 
 	def parse_args(self):
