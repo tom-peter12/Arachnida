@@ -10,6 +10,7 @@ from aiohttp import ClientResponseError
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'bmp'}
+TOTAL_DOWNLOADS = 0
 
 SIGNATURE = f'''
 	███████╗██████╗ ██╗██████╗ ███████╗██████╗ 
@@ -154,6 +155,7 @@ class Spider:
 
 			with open(img_path, 'wb') as img_file:
 				img_file.write(content)
+				global TOTAL_DOWNLOADS; TOTAL_DOWNLOADS += 1
 				logging.info(f'Downloaded {img_url}')
 		except Exception as e:
 			logging.error(f'Failed to download {img_url}: {e}')
@@ -191,6 +193,7 @@ class Spider:
 			await asyncio.gather(*image_tasks)
 
 		print("\n🎉 **Download Completed!**")
+		print(f"📊 **Total Images Downloaded: {TOTAL_DOWNLOADS}**")
 		print(f"📂 **Downloaded Images are saved in '{self.path}'**")
 		self.print_tree()
 
@@ -209,7 +212,7 @@ class Spider:
 class ArgParser:
 	def check_positive(self, value):
 		ivalue = int(value)
-		if ivalue <= 0:
+		if ivalue < 0:
 			raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
 		return ivalue
 
@@ -270,13 +273,22 @@ class ArgParser:
 		else:
 			raise SystemExit("\n❌ **Operation Cancelled. Please provide the correct information and try again.**\n")
 
+spider_instance = None
+
 async def main():
+	global spider_instance
 	args = ArgParser().parse_args()
 	try:
-		s = Spider(args.recursive, args.level, args.URL, args.path)
-		await s.download()
+		spider_instance = Spider(args.recursive, args.level, args.URL, args.path)
+		await spider_instance.download()
 	except SpiderException as e:
 		logging.error(f"Spider failed: {e}")
 
 if __name__ == "__main__":
-	asyncio.run(main())
+	try:
+		asyncio.run(main())
+	except KeyboardInterrupt:
+		logging.error("Download cancelled by user")
+		print(f"📊 **Total Images Downloaded: {TOTAL_DOWNLOADS}**")
+		if spider_instance:
+			spider_instance.print_tree()
