@@ -2,6 +2,9 @@ from rich_argparse import RichHelpFormatter
 import os, exifread, argparse
 from colorama import Fore, Style
 from PIL import Image
+import tkinter as tk
+import tkinter.font as tkFont
+import tkinter.ttk as ttk
 
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'bmp'}
 
@@ -15,6 +18,49 @@ SIGNATURE = f'''
 	╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
 
 '''
+
+class ExifGUI(object):
+	header = ['EXIFTag', 'Value']
+
+	def __init__(self, exif_data):
+		self.tree = None
+		self.exif_data = exif_data
+		self._setup_widgets()
+		self._build_tree()
+
+	def _setup_widgets(self):
+
+		msg = ttk.Label(wraplength="10i", justify="left", anchor="n")
+		msg.pack(fill='x')
+
+		container = ttk.Frame()
+		container.pack(fill='both', expand=True)
+
+		self.tree = ttk.Treeview(columns=ExifGUI.header, show="headings")
+		vsb = ttk.Scrollbar(orient="vertical",
+			command=self.tree.yview)
+		hsb = ttk.Scrollbar(orient="horizontal",
+			command=self.tree.xview)
+		self.tree.configure(yscrollcommand=vsb.set,
+			xscrollcommand=hsb.set)
+		self.tree.grid(column=0, row=0, sticky='nsew', in_=container)
+		vsb.grid(column=1, row=0, sticky='ns', in_=container)
+		hsb.grid(column=0, row=1, sticky='ew', in_=container)
+
+		container.grid_columnconfigure(0, weight=1)
+		container.grid_rowconfigure(0, weight=1)
+
+	def _build_tree(self):
+		for col in ExifGUI.header:
+			self.tree.heading(col, text=col.title())
+			self.tree.column(col, width=tkFont.Font().measure(col.title() + '        '))
+
+		for item in self.exif_data:
+			self.tree.insert('', 'end', values=item)
+			for ix, val in enumerate(item):
+				col_w = tkFont.Font().measure(val)
+				if self.tree.column(ExifGUI.header[ix], width = None) < col_w:
+					self.tree.column(ExifGUI.header[ix], width = col_w)
 
 class ExtractExifException(Exception):
 	pass
@@ -58,7 +104,7 @@ class ExtractExif:
 		print(Fore.YELLOW + "╚" + "═" * total_width + "╝" + Fore.WHITE)
 		print(Style.RESET_ALL)
 
-	def extract_all(self):
+	def extract_all(self, graphical):
 		try:
 			for img_file in self.img_files:
 				if not (os.path.splitext(img_file)[1][1:].lower() in ALLOWED_IMAGE_EXTENSIONS):
@@ -66,7 +112,20 @@ class ExtractExif:
 				else:
 					with open(img_file, 'rb') as f:
 						img_exif = exifread.process_file(f)
-						self.prettified_display(img_file, img_exif)
+						if not graphical:
+							self.prettified_display(img_file, img_exif)
+						else:
+							exif_array = []
+							for tag, value in img_exif.items():
+								if tag == "JPEGThumbnail":
+									continue
+								tag_str = str(tag)
+								val = str(value) if value is not None else ""
+								exif_array.append([tag_str, val])
+							root = tk.Tk()
+							root.wm_title("Scorpion")
+							mc_listbox = ExifGUI(exif_array)
+							root.mainloop()
 		except Exception as e:
 			print(e)
 
@@ -133,8 +192,18 @@ def main():
 		help='Edit the exif data of the image/images'
 	)
 
+	group.add_argument(
+		'-g', '--graphical',
+		action='store_true',
+		help='Display the exif data in a graphical format'
+	)
+
 	args = parser.parse_args()
 	extractor = ExtractExif(args.imagefiles)
+	if args.graphical and len(args.imagefiles) > 1:
+		print(f"{Fore.RED}Sorry, Scorpion can only display exif data of one image in graphical format{Fore.WHITE}")
+		return
+	print(SIGNATURE)
 	if args.delete:
 		extractor.delete_exif()
 		return
@@ -143,14 +212,13 @@ def main():
 		return
 	confirmation = input(f"{Fore.RED}Do you want to extract exif data from the image/images? (yes/n): {Fore.WHITE}")
 	if confirmation.lower() == 'yes':
-		extractor.extract_all()
+		extractor.extract_all(args.graphical)
 	else:
 		print(f"{Fore.RED}Exiting...{Fore.WHITE}")
 
 
 if __name__ == "__main__":
 	try:
-		print(SIGNATURE)
 		main()
 	except Exception as e:
 		print(e)
