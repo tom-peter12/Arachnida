@@ -84,4 +84,15 @@ A detailed time comparison was conducted between Arachnida’s web scraper and G
 
 Working on Arachnida provided invaluable experience in managing resources for large-scale web scraping. Optimizing recursion strategies and parallel execution taught me how to balance performance with memory efficiency. Additionally, I deepened my understanding of image metadata, the complexities of EXIF data across formats, and learned to develop user-friendly GUIs using Tkinter.
 
+**Key Takeaways** 
+- Breadth-first Graph traversal
+- Argument Parsing
+- HTTP requests
+- HTML parsing using lxml
+- Web Scrapping
+- Concurrency for CPU Bound Tasks
+- Async programming for I/O Bound Tasks
+- EXIF Data
+- Tkinter Graphics 
+
 
