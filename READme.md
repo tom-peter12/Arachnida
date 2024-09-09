@@ -55,7 +55,7 @@ This tool behaves similarly to `ExifTool` by Phil Harvey, leveraging the `exifre
    - `-h`: Help message
    - `-g`: GUI mode
    - `-d`: Delete EXIF data
-   - `-f FILE`: Image file path
+   - `FILE`: Image file path
 
 
 ## Optimizations
@@ -74,8 +74,7 @@ A detailed time comparison was conducted between Arachnida’s web scraper and G
 | [https://ollivere.co/](https://ollivere.co/) | 2               | 19.066s         | 13.010s          |
 
 
-**Note**: The times are in the format `HH:MM:SS`.
-The command used for GNU `wget` was:
+**Note**: The command used for GNU `wget` was:
 ```bash
 	wget -r -l LEVEL -A jpg,jpeg,png,gif,bmp --no-parent -nd -P ./data <URL>
 ```
