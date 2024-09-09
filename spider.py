@@ -192,10 +192,10 @@ class Spider:
 
 			await asyncio.gather(*image_tasks)
 
-		# print("\n🎉 **Download Completed!**")
-		# print(f"📊 **Total Images Downloaded: {TOTAL_DOWNLOADS}**")
-		# print(f"📂 **Downloaded Images are saved in '{self.path}'**")
-		# self.print_tree()
+		print("\n🎉 **Download Completed!**")
+		print(f"📊 **Total Images Downloaded: {TOTAL_DOWNLOADS}**")
+		print(f"📂 **Downloaded Images are saved in '{self.path}'**")
+		self.print_tree()
 
 
 	def print_tree(self, filename="url_tree.txt"):
@@ -269,10 +269,10 @@ class ArgParser:
 	def parse_args(self):
 		args = self.parser.parse_args()
 		return args
-		# if self.validate_and_confirm(args):
-		# 	return args
-		# else:
-		# 	raise SystemExit("\n❌ **Operation Cancelled. Please provide the correct information and try again.**\n")
+		if self.validate_and_confirm(args):
+			return args
+		else:
+			raise SystemExit("\n❌ **Operation Cancelled. Please provide the correct information and try again.**\n")
 
 spider_instance = None
 
@@ -291,5 +291,5 @@ if __name__ == "__main__":
 	except KeyboardInterrupt:
 		logging.error("Download cancelled by user")
 		print(f"📊 **Total Images Downloaded: {TOTAL_DOWNLOADS}**")
-		# if spider_instance:
-		# 	spider_instance.print_tree()
+		if spider_instance:
+			spider_instance.print_tree()
