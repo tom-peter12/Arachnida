@@ -24,20 +24,27 @@ This tool behaves similarly to `ExifTool` by Phil Harvey, leveraging the `exifre
 
 ### Web Image Scraper (Spider)
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/tom-peter12/arachnida.git
    cd arachnida
+
    ```
 2. Create and set up a virtual environment
+   
    ```bash
    python3 -m venv env
    source env/bin/activate
-   ```
+
+    ```
 3. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
+
    ```
 4. Run the scraper:
+
    ```bash
    python3 spider.py [-h] [-r] [-l LEVEL] [-p PATH] URL 
    ```
@@ -49,6 +56,7 @@ This tool behaves similarly to `ExifTool` by Phil Harvey, leveraging the `exifre
 
 ### EXIF Data Extraction (Scorpion)
 3. Run the program:
+
    ```bash
    python3 scorpion.py [-h] [-g] [-d] [FILE ...]
    ```
@@ -75,6 +83,7 @@ A detailed time comparison was conducted between Arachnida’s web scraper and G
 
 
 **Note**: The command used for GNU `wget` was:
+
 ```bash
 	wget -r -l LEVEL -A jpg,jpeg,png,gif,bmp --no-parent -nd -P ./data <URL>
 ```
