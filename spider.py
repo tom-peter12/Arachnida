@@ -268,7 +268,6 @@ class ArgParser:
 
 	def parse_args(self):
 		args = self.parser.parse_args()
-		return args
 		if self.validate_and_confirm(args):
 			return args
 		else:
